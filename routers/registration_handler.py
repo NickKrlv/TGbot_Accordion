@@ -103,15 +103,23 @@ async def show_profile_private(message: types.Message):
         message_count = db_manager.get_user_message_count(message.from_user.id)
 
         # Если пользователь уже зарегистрирован - показываем его данные с кнопкой Изменить
+        # Добавляем проверки на None для каждого поля
+        telegram_id = user[1] if len(user) > 1 and user[1] else "Не указан"
+        username = user[2] if len(user) > 2 and user[2] else "не указан"
+        full_name = user[3] if len(user) > 3 and user[3] else "Не указан"
+        birth_date = user[4] if len(user) > 4 and user[4] else "Не указана"
+        registration_date = user[5][:10] if len(user) > 5 and user[5] else "Не указана"
+        last_updated = user[6][:10] if len(user) > 6 and user[6] else "Не указана"
+
         profile_text = (
             "👤 Ваш профиль:\n\n"
-            f"🆔 Telegram ID: {user[1]}\n"
-            f"👤 Username: @{user[2] or 'не указан'}\n"
-            f"📛 Имя: {user[3]}\n"
-            f"🎂 Дата рождения: {user[4]}\n"
+            f"🆔 Telegram ID: {telegram_id}\n"
+            f"👤 Username: @{username}\n"
+            f"📛 Имя: {full_name}\n"
+            f"🎂 Дата рождения: {birth_date}\n"
             f"📊 Сообщений в группах: {message_count}\n"
-            f"📅 Дата регистрации: {user[5][:10]}\n"
-            f"🔄 Последнее обновление: {user[6][:10]}"
+            f"📅 Дата регистрации: {registration_date}\n"
+            f"🔄 Последнее обновление: {last_updated}"
         )
         await message.answer(profile_text, reply_markup=get_user_profile_kb())
         logger.info(f"Профиль пользователя {message.from_user.id} отправлен (сообщений: {message_count})")

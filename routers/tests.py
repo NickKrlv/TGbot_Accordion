@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 # Тестовая команда для проверки поздравлений
-@router.message(Command("test_birthday"), F.chat.type == "private")
+@router.message(Command("test_birthday"), F.chat.type == "private", F.from_user.id == 359964166)
 async def test_birthday_command(message: types.Message, bot):
     """Тестовая команда для проверки поздравлений"""
     logger.info(f"Пользователь {message.from_user.id} запустил тест поздравлений")
@@ -24,7 +24,7 @@ async def test_birthday_command(message: types.Message, bot):
 
 
 # Команда для показа статистики пользователя
-@router.message(Command("stats"), F.chat.type == "private")
+@router.message(Command("stats"), F.chat.type == "private", F.from_user.id == 359964166)
 async def show_user_stats(message: types.Message):
     """Показ статистики пользователя"""
     message_count = db_manager.get_user_message_count(message.from_user.id)
@@ -32,7 +32,7 @@ async def show_user_stats(message: types.Message):
 
 
 # Ручная проверка активности
-@router.message(Command("activity_check"), F.chat.type == "private")
+@router.message(Command("activity_check"), F.chat.type == "private", F.from_user.id == 359964166)
 async def manual_activity_check(message: types.Message, bot):
     """Ручная проверка активности (только для администраторов)"""
     logger.info(f"Пользователь {message.from_user.id} запустил ручную проверку активности")
@@ -51,7 +51,7 @@ async def manual_activity_check(message: types.Message, bot):
         await message.answer(f"❌ Ошибка: {e}")
 
 
-@router.message(Command("news_of_the_week"), F.chat.type == "private")
+@router.message(Command("news_of_the_week"), F.chat.type == "private", F.from_user.id == 359964166)
 async def news_of_the_week(message: types.Message, bot):
     logger.info(f"Пользователь {message.from_user.id} запустил новости недели")
 
