@@ -3,6 +3,9 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 class ButtonText:
     PROFILE = "👤 Профиль"
     CLOSE = "Закрыть"
+    EDIT_PROFILE = "✏️ Изменить"
+    BACK_TO_MAIN = "⬅️ Назад"
+    CONFIRM = "✅ Подтвердить"
 
 def get_main_kb() -> ReplyKeyboardMarkup:
     """Основная клавиатура с кнопками Профиль и Закрыть"""
@@ -20,7 +23,18 @@ def get_profile_kb() -> ReplyKeyboardMarkup:
     markup = ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="📝 Зарегистрироваться")],
-            [KeyboardButton(text="⬅️ Назад")]
+            [KeyboardButton(text=ButtonText.BACK_TO_MAIN)]
+        ],
+        resize_keyboard=True
+    )
+    return markup
+
+def get_user_profile_kb() -> ReplyKeyboardMarkup:
+    """Клавиатура для зарегистрированного пользователя"""
+    markup = ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text=ButtonText.EDIT_PROFILE)],
+            [KeyboardButton(text=ButtonText.BACK_TO_MAIN)]
         ],
         resize_keyboard=True
     )
@@ -30,6 +44,17 @@ def get_cancel_kb() -> ReplyKeyboardMarkup:
     """Клавиатура с кнопкой отмены"""
     markup = ReplyKeyboardMarkup(
         keyboard=[
+            [KeyboardButton(text="❌ Отмена")]
+        ],
+        resize_keyboard=True
+    )
+    return markup
+
+def get_confirm_edit_kb() -> ReplyKeyboardMarkup:
+    """Клавиатура для подтверждения изменений"""
+    markup = ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="✅ Подтвердить")],
             [KeyboardButton(text="❌ Отмена")]
         ],
         resize_keyboard=True

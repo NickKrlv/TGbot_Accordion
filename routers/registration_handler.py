@@ -3,24 +3,28 @@ import re
 from aiogram import Router, F, types
 from aiogram.fsm.context import FSMContext
 from aiogram.filters import Command, StateFilter
-from states.registration_states import RegistrationStates
-from keyboards.main_kb import ButtonText, get_main_kb, get_profile_kb, get_cancel_kb
+from states.registration_states import RegistrationStates, EditProfileStates
+from keyboards.main_kb import (
+    ButtonText, get_main_kb, get_profile_kb, get_cancel_kb,
+    get_user_profile_kb, get_confirm_edit_kb
+)
 from database.users_db import db_manager
 
 router = Router(name=__name__)
+logger = logging.getLogger(__name__)
 
 
-# Функции работы с БД
+# Функции работы с БД с логированием
 def get_user(telegram_id):
-    """Получение информации о пользователе"""
     try:
         conn = db_manager.get_connection()
         cursor = conn.cursor()
         cursor.execute('SELECT * FROM users WHERE telegram_id = ?', (telegram_id,))
         user = cursor.fetchone()
+        logger.info(f"Получен пользователь {telegram_id}: {'найден' if user else 'не найден'}")
         return user
     except Exception as e:
-        logging.error(f"Ошибка получения пользователя: {e}")
+        logger.error(f"Ошибка получения пользователя {telegram_id}: {e}")
         return None
 
 
@@ -30,30 +34,58 @@ def save_user_to_db(user_data):
         conn = db_manager.get_connection()
         cursor = conn.cursor()
         from datetime import datetime
-        cursor.execute('''
-            INSERT OR REPLACE INTO users 
-            (telegram_id, username, full_name, birth_date, registration_date, last_updated)
-            VALUES (?, ?, ?, ?, ?, ?)
-        ''', (
-            user_data['telegram_id'],
-            user_data['username'],
-            user_data['full_name'],
-            user_data['birth_date'],
-            user_data.get('registration_date', datetime.now().isoformat()),
-            datetime.now().isoformat()
-        ))
+
+        current_time = datetime.now().isoformat()
+
+        # Проверяем, существует ли уже пользователь
+        cursor.execute('SELECT registration_date FROM users WHERE telegram_id = ?',
+                       (user_data['telegram_id'],))
+        existing_user = cursor.fetchone()
+
+        if existing_user:
+            # Если пользователь уже существует, сохраняем дату регистрации
+            registration_date = existing_user[0]
+            # Обновляем только last_updated
+            cursor.execute('''
+                           UPDATE users
+                           SET username     = ?,
+                               full_name    = ?,
+                               birth_date   = ?,
+                               last_updated = ?
+                           WHERE telegram_id = ?
+                           ''', (
+                               user_data['username'],
+                               user_data['full_name'],
+                               user_data['birth_date'],
+                               current_time,
+                               user_data['telegram_id']
+                           ))
+        else:
+            # Если новый пользователь, устанавливаем обе даты
+            cursor.execute('''
+                           INSERT INTO users
+                           (telegram_id, username, full_name, birth_date, registration_date, last_updated)
+                           VALUES (?, ?, ?, ?, ?, ?)
+                           ''', (
+                               user_data['telegram_id'],
+                               user_data['username'],
+                               user_data['full_name'],
+                               user_data['birth_date'],
+                               current_time,
+                               current_time
+                           ))
+
         conn.commit()
-        logging.info(f"Пользователь {user_data['telegram_id']} сохранен в БД")
+        logging.info(f"Пользователь {user_data['telegram_id']} {'обновлен' if existing_user else 'сохранен'} в БД")
         return True
     except Exception as e:
-        logging.error(f"Ошибка сохранения пользователя: {e}")
+        logging.error(f"Ошибка сохранения пользователя {user_data['telegram_id']}: {e}")
         return False
 
 
-# Только для лички
 @router.message(Command("start"), F.chat.type == "private")
 async def cmd_start_private(message: types.Message):
-    logging.info(f"Пользователь {message.from_user.id} запустил бота в личке")
+    logger.info(f"Пользователь {message.from_user.id} запустил бота в личке")
     await message.answer(
         "👋 Добро пожаловать в личные сообщения с ботом!\n\n"
         "Здесь вы можете зарегистрироваться или посмотреть свой профиль.",
@@ -61,23 +93,28 @@ async def cmd_start_private(message: types.Message):
     )
 
 
-# Только для лички
 @router.message(F.text == ButtonText.PROFILE, F.chat.type == "private")
 async def show_profile_private(message: types.Message):
-    logging.info(f"Пользователь {message.from_user.id} нажал Профиль в личке")
+    logger.info(f"Пользователь {message.from_user.id} нажал Профиль в личке")
     user = get_user(message.from_user.id)
 
     if user:
-        # Если пользователь уже зарегистрирован - показываем его данные
+        # Получаем счетчик сообщений
+        message_count = db_manager.get_user_message_count(message.from_user.id)
+
+        # Если пользователь уже зарегистрирован - показываем его данные с кнопкой Изменить
         profile_text = (
             "👤 Ваш профиль:\n\n"
             f"🆔 Telegram ID: {user[1]}\n"
             f"👤 Username: @{user[2] or 'не указан'}\n"
             f"📛 Имя: {user[3]}\n"
             f"🎂 Дата рождения: {user[4]}\n"
-            f"📅 Дата регистрации: {user[5][:10]}"
+            f"📊 Сообщений в группах: {message_count}\n"
+            f"📅 Дата регистрации: {user[5][:10]}\n"
+            f"🔄 Последнее обновление: {user[6][:10]}"
         )
-        await message.answer(profile_text, reply_markup=get_main_kb())
+        await message.answer(profile_text, reply_markup=get_user_profile_kb())
+        logger.info(f"Профиль пользователя {message.from_user.id} отправлен (сообщений: {message_count})")
     else:
         # Если не зарегистрирован - предлагаем зарегистрироваться
         await message.answer(
@@ -85,20 +122,71 @@ async def show_profile_private(message: types.Message):
             "Нажмите кнопку ниже, чтобы зарегистрироваться:",
             reply_markup=get_profile_kb()
         )
+        logger.info(f"Пользователь {message.from_user.id} не зарегистирован")
 
 
-# Только для лички
+@router.message(F.text == ButtonText.EDIT_PROFILE, F.chat.type == "private")
+async def start_edit_profile(message: types.Message, state: FSMContext):
+    logger.info(f"Пользователь {message.from_user.id} начал редактирование профиля")
+
+    user = get_user(message.from_user.id)
+    if not user:
+        await message.answer(
+            "❌ Вы еще не зарегистрированы!\n"
+            "Сначала зарегистрируйтесь.",
+            reply_markup=get_main_kb()
+        )
+        return
+
+    # Автоматически получаем текущие данные пользователя
+    current_name = user[3] if user[3] else ""
+    current_birthday = user[4] if user[4] else ""
+
+    # Сохраняем текущие данные в состояние
+    await state.update_data(
+        current_name=current_name,
+        current_birthday=current_birthday
+    )
+
+    # Предлагаем ввести новое имя
+    await message.answer(
+        f"📝 Текущее имя: {current_name}\n"
+        f"Введите новое имя (или отправьте '-' чтобы оставить текущее):",
+        reply_markup=get_cancel_kb()
+    )
+    await state.set_state(EditProfileStates.waiting_for_name)
+
+
+@router.message(F.text == ButtonText.CLOSE, F.chat.type == "private")
+async def close_keyboard_private(message: types.Message):
+    logger.info(f"Пользователь {message.from_user.id} закрыл клавиатуру в личке")
+    await message.answer(
+        "Клавиатура скрыта. Чтобы открыть меню снова, отправьте /start",
+        reply_markup=types.ReplyKeyboardRemove()
+    )
+
+
+@router.message(F.text == ButtonText.BACK_TO_MAIN, F.chat.type == "private")
+async def go_back_to_main(message: types.Message):
+    logger.info(f"Пользователь {message.from_user.id} вернулся в главное меню")
+    await message.answer(
+        "Возвращаемся в главное меню:",
+        reply_markup=get_main_kb()
+    )
+
+
 @router.message(F.text == "📝 Зарегистрироваться", F.chat.type == "private")
 async def start_registration(message: types.Message, state: FSMContext):
-    logging.info(f"Пользователь {message.from_user.id} начал регистрацию в личке")
+    logger.info(f"Пользователь {message.from_user.id} начал регистрацию в личке")
 
-    # Проверяем, не зарегистрирован ли уже
     user = get_user(message.from_user.id)
     if user:
         await message.answer(
-            "❌ Вы уже зарегистрированы!",
+            "❌ Вы уже зарегистрированы!\n"
+            "Вы можете посмотреть или изменить свой профиль.",
             reply_markup=get_main_kb()
         )
+        logger.info(f"Пользователь {message.from_user.id} уже зарегистирован")
         return
 
     # Автоматически получаем ID и username
@@ -112,34 +200,23 @@ async def start_registration(message: types.Message, state: FSMContext):
     await state.set_state(RegistrationStates.waiting_for_name)
 
 
-# Только для лички
-@router.message(F.text == "⬅️ Назад", F.chat.type == "private")
-async def go_back_to_main(message: types.Message):
-    logging.info(f"Пользователь {message.from_user.id} нажал Назад")
-    await message.answer(
-        "Возвращаемся в главное меню:",
-        reply_markup=get_main_kb()
-    )
-
-
-# Только для лички
 @router.message(F.text == "❌ Отмена", F.chat.type == "private")
-async def cancel_registration(message: types.Message, state: FSMContext):
-    logging.info(f"Пользователь {message.from_user.id} отменил регистрацию")
+async def cancel_operation(message: types.Message, state: FSMContext):
+    logger.info(f"Пользователь {message.from_user.id} отменил операцию")
     await state.clear()
     await message.answer(
-        "❌ Регистрация отменена.",
+        "❌ Операция отменена.",
         reply_markup=get_main_kb()
     )
 
 
-# Обработчики регистрации - только для лички
+# Обработчики регистрации
 @router.message(StateFilter(RegistrationStates.waiting_for_name), F.chat.type == "private")
 async def process_name(message: types.Message, state: FSMContext):
-    logging.info(f"Пользователь {message.from_user.id} вводит имя: {message.text}")
+    logger.info(f"Пользователь {message.from_user.id} вводит имя: {message.text}")
 
     if message.text == "❌ Отмена":
-        await cancel_registration(message, state)
+        await cancel_operation(message, state)
         return
 
     await state.update_data(name=message.text)
@@ -152,10 +229,10 @@ async def process_name(message: types.Message, state: FSMContext):
 
 @router.message(StateFilter(RegistrationStates.waiting_for_birthday), F.chat.type == "private")
 async def process_birthday(message: types.Message, state: FSMContext):
-    logging.info(f"Пользователь {message.from_user.id} вводит дату рождения: {message.text}")
+    logger.info(f"Пользователь {message.from_user.id} вводит дату рождения: {message.text}")
 
     if message.text == "❌ Отмена":
-        await cancel_registration(message, state)
+        await cancel_operation(message, state)
         return
 
     # Проверка формата даты
@@ -192,22 +269,22 @@ async def process_birthday(message: types.Message, state: FSMContext):
         f"👤 Username: @{message.from_user.username or 'не указан'}\n"
         f"📛 Имя: {user_data['name']}\n"
         f"🎂 Дата рождения: {user_data['birthday']}\n\n"
-        "Все верно? Отправьте '+' для подтверждения или '-' для отмены."
+        "Все верно? Нажмите кнопку подтверждения ниже:"
     )
 
-    await message.answer(confirmation_text, reply_markup=get_cancel_kb())
+    await message.answer(confirmation_text, reply_markup=get_confirm_edit_kb())
     await state.set_state(RegistrationStates.waiting_for_confirmation)
 
 
 @router.message(StateFilter(RegistrationStates.waiting_for_confirmation), F.chat.type == "private")
-async def process_confirmation(message: types.Message, state: FSMContext):
-    logging.info(f"Пользователь {message.from_user.id} подтверждает регистрацию: {message.text}")
+async def process_registration_confirmation(message: types.Message, state: FSMContext):
+    logger.info(f"Пользователь {message.from_user.id} подтверждает регистрацию: {message.text}")
 
     if message.text == "❌ Отмена":
-        await cancel_registration(message, state)
+        await cancel_operation(message, state)
         return
 
-    if message.text == '+':
+    if message.text == "✅ Подтвердить":
         # Получаем данные из состояния
         user_data = await state.get_data()
 
@@ -225,7 +302,7 @@ async def process_confirmation(message: types.Message, state: FSMContext):
                 "Спасибо за регистрацию!",
                 reply_markup=get_main_kb()
             )
-            logging.info(f"Пользователь {message.from_user.id} успешно зарегистрирован")
+            logger.info(f"Пользователь {message.from_user.id} успешно зарегистрирован")
         else:
             await message.answer(
                 "❌ Произошла ошибка при сохранении данных.\n"
@@ -240,10 +317,128 @@ async def process_confirmation(message: types.Message, state: FSMContext):
 
     await state.clear()
 
-@router.message(F.text == ButtonText.CLOSE, F.chat.type == "private")
-async def close_keyboard_private(message: types.Message):
-    logging.info(f"Пользователь {message.from_user.id} закрыл клавиатуру в личке")
+
+# Обработчики редактирования профиля
+@router.message(StateFilter(EditProfileStates.waiting_for_name), F.chat.type == "private")
+async def process_edit_name(message: types.Message, state: FSMContext):
+    logger.info(f"Пользователь {message.from_user.id} вводит новое имя: {message.text}")
+
+    if message.text == "❌ Отмена":
+        await cancel_operation(message, state)
+        return
+
+    # Если пользователь отправил "-", оставляем текущее имя
+    if message.text == '-':
+        user_data = await state.get_data()
+        new_name = user_data.get('current_name', '')
+    else:
+        new_name = message.text
+
+    await state.update_data(new_name=new_name)
     await message.answer(
-        "Клавиатура скрыта. Чтобы открыть меню снова, отправьте /start",
-        reply_markup=types.ReplyKeyboardRemove()
+        "🎂 Введите новую дату рождения в формате ДД.ММ.ГГГГ (например: 25.12.1990)\n"
+        "или отправьте '-' чтобы оставить текущую:",
+        reply_markup=get_cancel_kb()
     )
+    await state.set_state(EditProfileStates.waiting_for_birthday)
+
+
+@router.message(StateFilter(EditProfileStates.waiting_for_birthday), F.chat.type == "private")
+async def process_edit_birthday(message: types.Message, state: FSMContext):
+    logger.info(f"Пользователь {message.from_user.id} вводит новую дату рождения: {message.text}")
+
+    if message.text == "❌ Отмена":
+        await cancel_operation(message, state)
+        return
+
+    # Если пользователь отправил "-", оставляем текущую дату рождения
+    if message.text == '-':
+        user_data = await state.get_data()
+        new_birthday = user_data.get('current_birthday', '')
+    else:
+        # Проверка формата даты
+        if not re.match(r'^\d{2}\.\d{2}\.\d{4}$', message.text):
+            await message.answer(
+                "❌ Неверный формат даты.\n"
+                "Пожалуйста, введите дату в формате ДД.ММ.ГГГГ (например: 25.12.1990)\n"
+                "или отправьте '-' чтобы оставить текущую:",
+                reply_markup=get_cancel_kb()
+            )
+            return
+
+        # Проверка корректности даты
+        try:
+            day, month, year = map(int, message.text.split('.'))
+            if not (1 <= day <= 31 and 1 <= month <= 12 and 1900 <= year <= 2024):
+                raise ValueError
+        except ValueError:
+            await message.answer(
+                "❌ Некорректная дата.\n"
+                "Пожалуйста, введите существующую дату в формате ДД.ММ.ГГГГ\n"
+                "или отправьте '-' чтобы оставить текущую:",
+                reply_markup=get_cancel_kb()
+            )
+            return
+
+        new_birthday = message.text
+
+    await state.update_data(new_birthday=new_birthday)
+
+    # Получаем все данные
+    user_data = await state.get_data()
+
+    # Формируем подтверждение
+    confirmation_text = (
+        "📋 Проверьте новые данные:\n\n"
+        f"🆔 Telegram ID: {message.from_user.id}\n"
+        f"👤 Username: @{message.from_user.username or 'не указан'}\n"
+        f"📛 Имя: {user_data['new_name']}\n"
+        f"🎂 Дата рождения: {user_data['new_birthday']}\n\n"
+        "Все верно? Нажмите '✅ Подтвердить' для сохранения или '❌ Отмена' для отмены."
+    )
+
+    await message.answer(confirmation_text, reply_markup=get_confirm_edit_kb())
+    await state.set_state(EditProfileStates.waiting_for_confirmation)
+
+
+@router.message(StateFilter(EditProfileStates.waiting_for_confirmation), F.chat.type == "private")
+async def process_edit_confirmation(message: types.Message, state: FSMContext):
+    logger.info(f"Пользователь {message.from_user.id} подтверждает изменения: {message.text}")
+
+    if message.text == "❌ Отмена":
+        await cancel_operation(message, state)
+        return
+
+    if message.text == "✅ Подтвердить":
+        # Получаем данные из состояния
+        user_data = await state.get_data()
+
+        # Сохраняем в базу данных
+        save_data = {
+            'telegram_id': message.from_user.id,
+            'username': message.from_user.username,
+            'full_name': user_data['new_name'],
+            'birth_date': user_data['new_birthday'],
+        }
+
+        if save_user_to_db(save_data):
+            await message.answer(
+                "✅ Профиль успешно обновлен!",
+                reply_markup=get_main_kb()
+            )
+            logger.info(f"Профиль пользователя {message.from_user.id} успешно обновлен")
+        else:
+            await message.answer(
+                "❌ Произошла ошибка при сохранении данных.\n"
+                "Попробуйте позже.",
+                reply_markup=get_main_kb()
+            )
+    else:
+        await message.answer(
+            "❌ Изменения отменены.",
+            reply_markup=get_main_kb()
+        )
+
+    await state.clear()
+
+

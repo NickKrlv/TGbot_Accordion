@@ -8,29 +8,26 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from config import BOT_TOKEN
 from database.users_db import db_manager
 from routers import router
+from utils.birthday_scheduler import BirthdayScheduler
+from utils.activity_scheduler import ActivityScheduler
 
 
-# Настраиваем логирование ПРАВИЛЬНО - до всего остального
+# Настраиваем логирование
 def setup_logging():
-    # Создаем форматтер
     formatter = logging.Formatter(
         '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
 
-    # Настраиваем корневой логгер
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.INFO)
 
-    # Очищаем существующие обработчики
     root_logger.handlers.clear()
 
-    # Консольный обработчик
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setFormatter(formatter)
     console_handler.setLevel(logging.INFO)
     root_logger.addHandler(console_handler)
 
-    # Файловый обработчик
     file_handler = logging.FileHandler('bot.log', encoding='utf-8')
     file_handler.setFormatter(formatter)
     file_handler.setLevel(logging.INFO)
@@ -39,7 +36,6 @@ def setup_logging():
     return root_logger
 
 
-# Настраиваем логирование ДО ВСЕГО
 logger = setup_logging()
 logger.info("=== ЗАПУСК БОТА ===")
 
@@ -54,17 +50,31 @@ dp = Dispatcher(storage=storage)
 # Подключаем роутеры
 dp.include_router(router)
 
+# Создаем планировщики
+birthday_scheduler = BirthdayScheduler(bot)
+# Укажите ID вашей группы здесь
+GROUP_CHAT_ID = -1001785421122  # Замените на ID вашей группы
+activity_scheduler = ActivityScheduler(bot, GROUP_CHAT_ID)
+
 
 async def main():
     logger.info("Бот запущен и ожидает сообщений...")
     try:
+        # Запускаем планировщики
+        birthday_scheduler.start_scheduler()
+        activity_scheduler.start_scheduler()
+
+        # Запускаем бота
         await dp.start_polling(bot)
+
     except Exception as e:
         logger.error(f"Ошибка запуска: {e}", exc_info=True)
     finally:
         logger.info("Бот остановлен")
+        # Останавливаем планировщики
+        birthday_scheduler.stop_scheduler()
+        activity_scheduler.stop_scheduler()
         await bot.session.close()
-        # Закрываем соединение с базой данных
         db_manager.close_connection()
 
 

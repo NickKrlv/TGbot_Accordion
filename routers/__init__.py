@@ -1,7 +1,18 @@
-__all__ = ("router",)
 from aiogram import Router
 from .base_commands import router as base_router
 from .registration_handler import router as registration_router
+from .message_counter import router as message_counter_router
+from .tests import router as tests_router
+from .activity_handler import router as activity_router
 
+# Создаем главный роутер
 router = Router(name=__name__)
-router.include_routers(base_router, registration_router)
+
+# Включаем все роутеры
+router.include_routers(
+    base_router,
+    registration_router,
+    message_counter_router,
+    activity_router,
+    tests_router
+)
