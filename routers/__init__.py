@@ -1,7 +1,7 @@
 from aiogram import Router
 from .base_commands import router as base_router
 from .registration_handler import router as registration_router
-from .message_counter import router as message_counter_router
+from .echo_handlers import router as echo_router
 from .tests import router as tests_router
 from .activity_handler import router as activity_router
 
@@ -12,7 +12,7 @@ router = Router(name=__name__)
 router.include_routers(
     base_router,
     registration_router,
-    message_counter_router,
     activity_router,
-    tests_router
+    tests_router,
+    echo_router
 )

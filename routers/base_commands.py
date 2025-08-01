@@ -6,13 +6,13 @@ from keyboards.main_kb import ButtonText, get_main_kb
 router = Router(name=__name__)
 
 # Только для групп
-@router.message(Command("start"), F.chat.type.in_({"group", "supergroup"}))
-async def cmd_start_group(message: types.Message):
-    logging.info(f"Пользователь {message.from_user.id} запустил бота в группе {message.chat.id}")
-    await message.answer(
-        "👋 Добро пожаловать!",
-        reply_markup=get_main_kb()
-    )
+# @router.message(Command("start"), F.chat.type.in_({"group", "supergroup"}))
+# async def cmd_start_group(message: types.Message):
+#     logging.info(f"Пользователь {message.from_user.id} запустил бота в группе {message.chat.id}")
+#     await message.answer(
+#         "👋 Добро пожаловать!",
+        # reply_markup=get_main_kb()
+#   )
 
 # Только для группы
 @router.message(F.text == ButtonText.PROFILE, F.chat.type.in_({"group", "supergroup"}))

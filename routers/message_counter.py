@@ -1,12 +1,10 @@
 import logging
-from aiogram import Router, types
+from aiogram import types
 from database.users_db import db_manager
 
-router = Router(name=__name__)
+
 logger = logging.getLogger(__name__)
 
-
-@router.message(lambda message: message.chat.type in ["group", "supergroup"])
 async def count_group_messages(message: types.Message):
     """Подсчет сообщений в группе"""
     # Игнорируем сообщения от бота самого себя
